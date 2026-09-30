@@ -2,7 +2,7 @@
 // Student: Ernest Fistik
 // Date: September 26, 2026
 
-import 'dart:math' show pi;
+import 'dart:math' show pi, atan2;
 import 'package:flutter/material.dart';
 
 void main() => runApp(const SmileyApp());
@@ -24,6 +24,17 @@ class SmileyApp extends StatelessWidget {
   }
 }
 
+/// Smooth face color: blue (sad) -> yellow (neutral) -> orange (happy).
+Color moodColor(double mood) {
+  final blue = Colors.lightBlue.shade300;
+  final yellow = Colors.yellow.shade600;
+  final orange = Colors.orange.shade400;
+  if (mood < 0.5) {
+    return Color.lerp(blue, yellow, mood / 0.5)!;
+  }
+  return Color.lerp(yellow, orange, (mood - 0.5) / 0.5)!;
+}
+
 class DrawingPlayground extends StatefulWidget {
   const DrawingPlayground({super.key});
 
@@ -36,7 +47,7 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
   double eyeRadius = 14;
   double eyeGap = 0.35; // fraction of face radius
   bool showBlush = true;
-  Color faceColor = Colors.yellow.shade600;
+  bool showHat = true;
 
   @override
   Widget build(BuildContext context) {
@@ -52,10 +63,11 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                   size: const Size(300, 300),
                   painter: SmileyPainter(
                     mood: mood,
-                    faceColor: faceColor,
+                    faceColor: moodColor(mood),
                     eyeRadius: eyeRadius,
                     eyeGap: eyeGap,
                     showBlush: showBlush,
+                    showHat: showHat,
                   ),
                 ),
               ),
@@ -88,23 +100,10 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                     value: showBlush,
                     onChanged: (bool v) => setState(() => showBlush = v),
                   ),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final c in [
-                        Colors.yellow.shade600,
-                        Colors.lightBlue.shade300,
-                        Colors.orange.shade400,
-                        Colors.green.shade300,
-                      ])
-                        ChoiceChip(
-                          label: const Text('  '),
-                          backgroundColor: c,
-                          selectedColor: c,
-                          selected: faceColor == c,
-                          onSelected: (_) => setState(() => faceColor = c),
-                        ),
-                    ],
+                  SwitchListTile(
+                    title: const Text('Show hat'),
+                    value: showHat,
+                    onChanged: (bool v) => setState(() => showHat = v),
                   ),
                 ],
               ),
@@ -123,6 +122,7 @@ class SmileyPainter extends CustomPainter {
     required this.eyeRadius,
     required this.eyeGap,
     required this.showBlush,
+    required this.showHat,
   });
 
   final double mood;
@@ -130,6 +130,7 @@ class SmileyPainter extends CustomPainter {
   final double eyeRadius;
   final double eyeGap;
   final bool showBlush;
+  final bool showHat;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -166,28 +167,71 @@ class SmileyPainter extends CustomPainter {
     final eyeDx = r * eyeGap;
     canvas.drawCircle(Offset(c.dx - eyeDx, eyeY), eyeRadius, eyePaint);
     canvas.drawCircle(Offset(c.dx + eyeDx, eyeY), eyeRadius, eyePaint);
-    
-    // 5) Mouth 
+
+    // 5) Mouth
     final mouthPaint = Paint()
       ..color = Colors.black87
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
 
-    final t = (mood - 0.5) * 2;
-
     final mouthY = c.dy + r * 0.3;
     final halfWidth = r * 0.45;
 
-    final mouthPath = Path()
-      ..moveTo(c.dx - halfWidth, mouthY)
-      ..quadraticBezierTo(
-        c.dx,
-        mouthY + t * r * 0.8,
-        c.dx + halfWidth,
-        mouthY,
+    final t = (mood - 0.5) * 2;
+    final s = t * r * 0.4;
+    final a = s.abs();
+
+    if (a < 0.5) {
+      // Neutral: straight line
+      canvas.drawLine(
+        Offset(c.dx - halfWidth, mouthY),
+        Offset(c.dx + halfWidth, mouthY),
+        mouthPaint,
       );
-    canvas.drawPath(mouthPath, mouthPaint);
+    } else {
+      // Circle arc through the two fixed endpoints with bulge 'a'
+      final R = (halfWidth * halfWidth + a * a) / (2 * a);
+      final phi = atan2(R - a, halfWidth);
+      final sweep = pi - 2 * phi;
+
+      if (s > 0) {
+        // Smile: circle center above the chord, draw the bottom arc
+        final center = Offset(c.dx, mouthY - (R - a));
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: R),
+          phi,
+          sweep,
+          false,
+          mouthPaint,
+        );
+      } else {
+        // Frown: circle center below the chord, draw the top arc
+        final center = Offset(c.dx, mouthY + (R - a));
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: R),
+          phi - pi,
+          sweep,
+          false,
+          mouthPaint,
+        );
+      }
+    }
+
+    // 6) Hat
+    if (showHat) {
+      final hatPaint = Paint()..color = Colors.indigo;
+      final hatTop = c.dy - r * 1.15;
+      canvas.drawRect(
+        Rect.fromLTRB(c.dx - r * 0.5, hatTop, c.dx + r * 0.5, c.dy - r * 0.75),
+        hatPaint,
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(
+            c.dx - r * 0.8, c.dy - r * 0.75, c.dx + r * 0.8, c.dy - r * 0.6),
+        hatPaint,
+      );
+    }
   }
 
   @override
@@ -196,6 +240,7 @@ class SmileyPainter extends CustomPainter {
         old.faceColor != faceColor ||
         old.eyeRadius != eyeRadius ||
         old.eyeGap != eyeGap ||
-        old.showBlush != showBlush;
+        old.showBlush != showBlush ||
+        old.showHat != showHat;
   }
 }
