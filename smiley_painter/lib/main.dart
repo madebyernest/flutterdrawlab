@@ -2,7 +2,7 @@
 // Student: Ernest Fistik
 // Date: September 26, 2026
 
-import 'dart:math' show pi, atan2;
+import 'dart:math' show pi, atan2, Random;
 import 'package:flutter/material.dart';
 
 void main() => runApp(const SmileyApp());
@@ -26,7 +26,6 @@ class SmileyApp extends StatelessWidget {
 
 enum FaceType { classic, sleepy, surprised }
 
-/// Smooth face color: blue (sad) -> yellow (neutral) -> orange (happy).
 Color moodColor(double mood) {
   final blue = Colors.lightBlue.shade300;
   final yellow = Colors.yellow.shade600;
@@ -45,12 +44,52 @@ class DrawingPlayground extends StatefulWidget {
 }
 
 class _DrawingPlaygroundState extends State<DrawingPlayground> {
-  double mood = 0.8; // 0.0 sad → 1.0 happy
+  double mood = 0.8;
   double eyeRadius = 14;
-  double eyeGap = 0.35; // fraction of face radius
+  double eyeGap = 0.35;
   bool showBlush = true;
   bool showHat = true;
   FaceType faceType = FaceType.classic;
+  Color faceColor = moodColor(0.8);
+
+  final Random _random = Random();
+
+  static final List<Color> _palette = [
+    Colors.yellow.shade600,
+    Colors.lightBlue.shade300,
+    Colors.orange.shade400,
+    Colors.green.shade300,
+    Colors.pink.shade200,
+    Colors.purple.shade200,
+  ];
+
+  void _showMessage(String text) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(text),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _cycleFace() {
+    final next = FaceType.values[(faceType.index + 1) % FaceType.values.length];
+    setState(() => faceType = next);
+    _showMessage('Face changed to ${next.name}');
+  }
+
+  void _randomize() {
+    final newMood = _random.nextDouble();
+    final newColor = _palette[_random.nextInt(_palette.length)];
+    setState(() {
+      mood = newMood;
+      faceColor = newColor;
+    });
+    _showMessage(
+        'Randomized: mood ${newMood.toStringAsFixed(2)} and a new face color');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,16 +101,21 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
             SizedBox(
               height: 320,
               child: Center(
-                child: CustomPaint(
-                  size: const Size(300, 300),
-                  painter: SmileyPainter(
-                    mood: mood,
-                    faceColor: moodColor(mood),
-                    eyeRadius: eyeRadius,
-                    eyeGap: eyeGap,
-                    showBlush: showBlush,
-                    showHat: showHat,
-                    faceType: faceType,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _cycleFace,
+                  onLongPress: _randomize,
+                  child: CustomPaint(
+                    size: const Size(300, 300),
+                    painter: SmileyPainter(
+                      mood: mood,
+                      faceColor: faceColor,
+                      eyeRadius: eyeRadius,
+                      eyeGap: eyeGap,
+                      showBlush: showBlush,
+                      showHat: showHat,
+                      faceType: faceType,
+                    ),
                   ),
                 ),
               ),
@@ -80,6 +124,9 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+                  const Text(
+                      'Tap the face to switch design · long-press to randomize'),
+                  const SizedBox(height: 12),
                   SegmentedButton<FaceType>(
                     segments: const [
                       ButtonSegment(
@@ -97,7 +144,10 @@ class _DrawingPlaygroundState extends State<DrawingPlayground> {
                   Text('Mood: ${mood.toStringAsFixed(2)}'),
                   Slider(
                     value: mood,
-                    onChanged: (double v) => setState(() => mood = v),
+                    onChanged: (double v) => setState(() {
+                      mood = v;
+                      faceColor = moodColor(v);
+                    }),
                   ),
                   Text('Eye radius: ${eyeRadius.toStringAsFixed(0)}'),
                   Slider(
@@ -164,10 +214,7 @@ class SmileyPainter extends CustomPainter {
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
 
-    // 1) Face
     canvas.drawCircle(c, r, Paint()..color = faceColor);
-
-    // 2) Border
     canvas.drawCircle(
       c,
       r,
@@ -177,7 +224,6 @@ class SmileyPainter extends CustomPainter {
         ..strokeWidth = 4,
     );
 
-    // 3) Blush
     if (showBlush) {
       final blush = Paint()..color = Colors.pink.withOpacity(0.35);
       final blushY = c.dy + r * 0.15;
@@ -188,7 +234,6 @@ class SmileyPainter extends CustomPainter {
       canvas.drawOval(blushRect(Offset(c.dx + blushDx, blushY)), blush);
     }
 
-    // 4) Eyes
     final eyeY = c.dy - r * 0.18;
     final eyeDx = r * eyeGap;
     final leftEye = Offset(c.dx - eyeDx, eyeY);
@@ -200,7 +245,6 @@ class SmileyPainter extends CustomPainter {
         canvas.drawCircle(rightEye, eyeRadius, dark);
         break;
       case FaceType.sleepy:
-        // Closed eyes: small downward-curving arcs
         for (final e in [leftEye, rightEye]) {
           final rect = Rect.fromCenter(
             center: e,
@@ -211,7 +255,6 @@ class SmileyPainter extends CustomPainter {
         }
         break;
       case FaceType.surprised:
-        // Bigger eyes: white with outline and a dark pupil
         final big = eyeRadius * 1.4;
         final outline = Paint()
           ..color = Colors.black87
@@ -225,12 +268,10 @@ class SmileyPainter extends CustomPainter {
         break;
     }
 
-    // 5) Mouth
     final mouthY = c.dy + r * 0.3;
     final halfWidth = r * 0.45;
 
     if (faceType == FaceType.surprised) {
-      // Round open mouth
       canvas.drawOval(
         Rect.fromCenter(
           center: Offset(c.dx, mouthY + r * 0.1),
@@ -242,24 +283,22 @@ class SmileyPainter extends CustomPainter {
     } else {
       var t = (mood - 0.5) * 2;
       if (faceType == FaceType.sleepy) t *= 0.4;
+
       final s = t * r * 0.4;
       final a = s.abs();
 
       if (a < 0.5) {
-        // Neutral: straight line
         canvas.drawLine(
           Offset(c.dx - halfWidth, mouthY),
           Offset(c.dx + halfWidth, mouthY),
           darkStroke,
         );
       } else {
-        // Circle arc through the two fixed endpoints with bulge 'a'
         final R = (halfWidth * halfWidth + a * a) / (2 * a);
         final phi = atan2(R - a, halfWidth);
         final sweep = pi - 2 * phi;
 
         if (s > 0) {
-          // Smile: circle center above the chord, draw the bottom arc
           final center = Offset(c.dx, mouthY - (R - a));
           canvas.drawArc(
             Rect.fromCircle(center: center, radius: R),
@@ -269,7 +308,6 @@ class SmileyPainter extends CustomPainter {
             darkStroke,
           );
         } else {
-          // Frown: circle center below the chord, draw the top arc
           final center = Offset(c.dx, mouthY + (R - a));
           canvas.drawArc(
             Rect.fromCircle(center: center, radius: R),
@@ -282,7 +320,6 @@ class SmileyPainter extends CustomPainter {
       }
     }
 
-    // 6) Hat
     if (showHat) {
       final hatPaint = Paint()..color = Colors.indigo;
       final hatTop = c.dy - r * 1.15;
